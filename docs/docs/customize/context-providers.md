@@ -56,9 +56,23 @@ Reference all of the changes you've made to your current branch. This is useful 
 }
 ```
 
+### `@Current File`
+
+Reference the currently open file.
+
+```json title="config.json"
+{
+  "contextProviders": [
+    {
+      "name": "currentFile"
+    }
+  ]
+}
+```
+
 ### `@Terminal`
 
-Reference the contents of your IDE's terminal.
+Reference the last command you ran in your IDE's terminal and its output.
 
 ```json title="config.json"
 {
@@ -99,6 +113,25 @@ Reference the contents of all of your open files. Set `onlyPinned` to `true` to 
       "name": "open",
       "params": {
         "onlyPinned": true
+      }
+    }
+  ]
+}
+```
+
+### `@Web`
+
+Reference relevant pages from across the web, automatically determined from your input.
+
+Optionally, set "n" to limit the number of results returned (default 6).
+
+```json title="config.json"
+{
+  "contextProviders": [
+    {
+      "name": "web",
+      "params": {
+        "n": 5
       }
     }
   ]
@@ -165,6 +198,20 @@ Reference the markdown converted contents of a given URL.
 }
 ```
 
+### `@Clipboard`
+
+Reference recent clipboard items
+
+```json title="config.json"
+{
+  "contextProviders": [
+    {
+      "name": "clipboard"
+    }
+  ]
+}
+```
+
 ### `@Tree`
 
 Reference the structure of your current workspace.
@@ -179,26 +226,103 @@ Reference the structure of your current workspace.
 }
 ```
 
-### `@Google`
+### `@Problems`
 
-Reference the results of a Google search.
+Get Problems from the current file.
 
 ```json title="config.json"
 {
   "contextProviders": [
     {
-      "name": "google",
+      "name": "problems"
+    }
+  ]
+}
+```
+
+### `@Debugger`
+
+Reference the contents of the local variables in the debugger. Currently only available in VS Code.
+
+```json title="config.json"
+{
+  "contextProviders": [
+    {
+      "name": "debugger",
       "params": {
-        "serperApiKey": "<your serper.dev api key>"
+        "stackDepth": 3
       }
     }
   ]
 }
 ```
 
-For example, type "@Google python tutorial" if you want to search and discuss ways of learning Python.
+Uses the top _n_ levels (defaulting to 3) of the call stack for that thread.
 
-Note: You can get an API key for free at [serper.dev](https://serper.dev).
+### `@Repository Map`
+
+Reference the outline of your codebase.
+
+`includeSignatures` params can be used to include signatures for all files in the repo. Use with caution as will increase context size significantly. `includeSignatures` will not work if indexing is disabled.
+
+```json title="config.json"
+{
+  "contextProviders": [
+    {
+      "name": "repo-map",
+      "params": {
+        "includeSignatures": false
+      }
+    }
+  ]
+}
+```
+
+Provides a list of files and the call signatures of top-level classes, functions, and methods in those files. This helps the model better understand how a particular piece of code relates to the rest of the codebase.
+
+In the submenu that appears, you can select either `Entire codebase`, or specify a subfolder to generate the repostiory map from.
+
+This context provider is inpsired by [Aider's repository map](https://aider.chat/2023/10/22/repomap.html).
+
+### `@Operating System`
+
+Reference the architecture and platform of your current operating system.
+
+```json title="config.json"
+{
+  "contextProviders": [
+    {
+      "name": "os"
+    }
+  ]
+}
+```
+
+### Model Context Protocol
+
+The [Model Context Protocol](https://modelcontextprotocol.io/introduction) is a standard proposed by Anthropic to unify prompts, context, and tool use. Continue supports any MCP server with the MCP context provider. Read their [quickstart](https://modelcontextprotocol.io/quickstart) to learn how to set up a local server and then configure your `config.json` like this:
+
+```json
+{
+  "experimental": {
+    "modelContextProtocolServers": [
+      {
+        "transport": {
+          "type": "stdio",
+          "command": "uvx",
+          "args": ["mcp-server-sqlite", "--db-path", "/Users/NAME/test.db"]
+        }
+      }
+    ]
+  }
+}
+```
+
+You'll then be able to type "@" and see "MCP" in the context providers dropdown.
+
+### Prompt Files
+
+See [Prompt Files](/customize/deep-dives/prompt-files). Prompt files are not added directly to the config file; prompt files are parsed and injected into the config automatically, to be used like other context providers.
 
 ### `@Issue`
 
@@ -224,6 +348,110 @@ Reference the conversation in a GitHub issue.
 ```
 
 Make sure to include your own [GitHub personal access token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens#creating-a-fine-grained-personal-access-token) to avoid being rate-limited.
+
+### `@Database`
+
+Reference table schemas from Sqlite, Postgres, MSSQL, and MySQL databases.
+
+```json title="config.json"
+{
+  "contextProviders": [
+    {
+      "name": "database",
+      "params": {
+        "connections": [
+          {
+            "name": "examplePostgres",
+            "connection_type": "postgres",
+            "connection": {
+              "user": "username",
+              "host": "localhost",
+              "database": "exampleDB",
+              "password": "yourPassword",
+              "port": 5432
+            }
+          },
+          {
+            "name": "exampleMssql",
+            "connection_type": "mssql",
+            "connection": {
+              "user": "username",
+              "server": "localhost",
+              "database": "exampleDB",
+              "password": "yourPassword"
+            }
+          },
+          {
+            "name": "exampleSqlite",
+            "connection_type": "sqlite",
+            "connection": {
+              "filename": "/path/to/your/sqlite/database.db"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
+Each connection should include a unique name, the `connection_type`, and the necessary connection parameters specific to each database type.
+
+Available connection types:
+
+- `postgres`
+- `mysql`
+- `sqlite`
+
+### `@Postgres`
+
+Reference the schema of a table, and some sample rows
+
+```json title="config.json"
+{
+  "contextProviders": [
+    {
+      "name": "postgres",
+      "params": {
+        "host": "localhost",
+        "port": 5436,
+        "user": "myuser",
+        "password": "catsarecool",
+        "database": "animals",
+        "schema": "public",
+        "sampleRows": 3
+      }
+    }
+  ]
+}
+```
+
+The only required settings are those for creating the database connection: `host`, `port`, `user`, `password`, and `database`.
+
+By default, the `schema` filter is set to `public`, and the `sampleRows` is set to 3. You may unset the schema if you want to include tables from all schemas.
+
+[Here is a short demo.](https://github.com/continuedev/continue/pull/859)
+
+### `@Google`
+
+Reference the results of a Google search.
+
+```json title="config.json"
+{
+  "contextProviders": [
+    {
+      "name": "google",
+      "params": {
+        "serperApiKey": "<your serper.dev api key>"
+      }
+    }
+  ]
+}
+```
+
+For example, type "@Google python tutorial" if you want to search and discuss ways of learning Python.
+
+Note: You can get an API key for free at [serper.dev](https://serper.dev).
 
 ### `@Gitlab Merge Request`
 
@@ -277,7 +505,7 @@ Reference the conversation in a Jira issue.
       "name": "jira",
       "params": {
         "domain": "company.atlassian.net",
-        "token ": "ATATT..."
+        "token": "ATATT..."
       }
     }
   ]
@@ -315,63 +543,26 @@ assignee = currentUser() AND resolution = Unresolved order by updated DESC
 
 You can override this query by setting the `issueQuery` parameter.
 
-### `@Postgres`
+### `@Discord`
 
-Reference the schema of a table, and some sample rows
-
-```json title="config.json"
-{
-  "contextProviders": [
-    {
-      "name": "postgres",
-      "params": {
-        "host": "localhost",
-        "port": 5436,
-        "user": "myuser",
-        "password": "catsarecool",
-        "database": "animals",
-        "schema": "public",
-        "sampleRows": 3
-      }
-    }
-  ]
-}
-```
-
-The only required settings are those for creating the database connection: `host`, `port`, `user`, `password`, and `database`.
-
-By default, the `schema` filter is set to `public`, and the `sampleRows` is set to 3. You may unset the schema if you want to include tables from all schemas.
-
-[Here is a short demo.](https://github.com/continuedev/continue/pull/859)
-
-### `@Database`
-
-Reference table schemas from Sqlite, Postgres, and MySQL databases.
+Reference the messages in a Discord channel.
 
 ```json title="config.json"
 {
   "contextProviders": [
     {
-      "name": "database",
+      "name": "discord",
       "params": {
-        "connections": [
+        "discordKey": "bot token",
+        "guildId": "1234567890",
+        "channels": [
           {
-            "name": "examplePostgres",
-            "connection_type": "postgres",
-            "connection": {
-              "user": "username",
-              "host": "localhost",
-              "database": "exampleDB",
-              "password": "yourPassword",
-              "port": 5432
-            }
+            "id": "123456",
+            "name": "example-channel"
           },
           {
-            "name": "exampleSqlite",
-            "connection_type": "sqlite",
-            "connection": {
-              "filename": "/path/to/your/sqlite/database.db"
-            }
+            "id": "678901",
+            "name": "example-channel-2"
           }
         ]
       }
@@ -380,66 +571,7 @@ Reference table schemas from Sqlite, Postgres, and MySQL databases.
 }
 ```
 
-Each connection should include a unique name, the `connection_type`, and the necessary connection parameters specific to each database type.
-
-Available connection types:
-
-- `postgres`
-- `mysql`
-- `sqlite`
-
-### `@Locals`
-
-Reference the contents of the local variables in the debugger.
-
-```json title="config.json"
-{
-  "contextProviders": [
-    {
-      "name": "locals",
-      "params": {
-        "stackDepth": 3
-      }
-    }
-  ]
-}
-```
-
-Uses the top _n_ levels (defaulting to 3) of the call stack for that thread.
-
-### `@Repository Map`
-
-Reference the outline of your codebase.
-
-```json title="config.json"
-{
-  "contextProviders": [
-    {
-      "name": "repo-map"
-    }
-  ]
-}
-```
-
-Provides a list of files and the call signatures of top-level classes, functions, and methods in those files. This helps the model better understand how a particular piece of code relates to the rest of the codebase.
-
-In the submenu that appears, you can select either `Entire codebase`, or specify a subfolder to generate the repostiory map from.
-
-This context provider is inpsired by [Aider's repository map](https://aider.chat/2023/10/22/repomap.html).
-
-### `@Operating System`
-
-Reference the architecture and platform of your current operating system.
-
-```json title="config.json"
-{
-  "contextProviders": [
-    {
-      "name": "os"
-    }
-  ]
-}
-```
+Make sure to include your own [Bot Token](https://discord.com/developers/applications), and join it to your related server . If you want more granular control over which channels are searched, you can specify a list of channel IDs to search in. If you don't want to specify any channels, just include the guild id(Server ID) and all channels will be included. The provider only reads text channels.
 
 ### `@HTTP`
 
@@ -460,7 +592,7 @@ The HttpContextProvider makes a POST request to the url passed in the configurat
 
 The receiving URL should expect to receive the following parameters:
 
-```json title="POST parameters"
+```js title="POST parameters"
 {
   query: string,
   fullInput: string
@@ -483,6 +615,59 @@ The response 200 OK should be a JSON object with the following structure:
   "name": "",
   "description": "",
   "content": ""
+}
+```
+
+### `@Commits`
+
+Reference specific git commit metadata and diff or all of the recent commits.
+
+```json title="config.json"
+{
+  "contextProviders": [
+    {
+      "name": "commit",
+      "params": {
+        "Depth": 50,
+        "LastXCommitsDepth": 10
+      }
+    }
+  ]
+}
+```
+
+The depth is how many commits will be loaded into the submenu, defaults to 50.
+The LastXCommitsDepth is how many recent commits will be included, defaults to 10.
+
+### `@Clipboard`
+
+Reference recent clipboard items
+
+```json title="config.json"
+{
+  "contextProviders": [
+    {
+      "name": "clipboard"
+    }
+  ]
+}
+```
+
+### `@Greptile`
+
+Query a [Greptile](https://www.greptile.com/) index of the current repo/branch.
+
+```json title="config.json"
+{
+  "contextProviders": [
+    {
+      "name": "greptile",
+      "params": {
+        "GreptileToken": "...",
+        "GithubToken": "..."
+      }
+    }
+  ]
 }
 ```
 

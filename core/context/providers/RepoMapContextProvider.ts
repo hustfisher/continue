@@ -6,12 +6,12 @@ import {
   ContextSubmenuItem,
   LoadSubmenuItemsArgs,
 } from "../../";
-import {
-  groupByLastNPathParts,
-  getBasename,
-  getUniqueFilePath,
-} from "../../util";
+import { walkDirs } from "../../indexing/walkDir";
 import generateRepoMap from "../../util/generateRepoMap";
+import {
+  getShortestUniqueRelativeUriPaths,
+  getUriPathBasename,
+} from "../../util/uri";
 
 const ENTIRE_PROJECT_ITEM: ContextSubmenuItem = {
   id: "entire-codebase",
@@ -25,7 +25,6 @@ class RepoMapContextProvider extends BaseContextProvider {
     displayTitle: "Repository Map",
     description: "Select a folder",
     type: "submenu",
-    dependsOnIndexing: true,
   };
 
   async getContextItems(
@@ -37,7 +36,12 @@ class RepoMapContextProvider extends BaseContextProvider {
         name: "Repository Map",
         description: "Overview of the repository structure",
         content: await generateRepoMap(extras.llm, extras.ide, {
-          dirs: query === ENTIRE_PROJECT_ITEM.id ? undefined : [query],
+          dirUris: query === ENTIRE_PROJECT_ITEM.id ? undefined : [query],
+          outputRelativeUriPaths: true,
+          // Doesn't ALWAYS depend on indexing, so not setting dependsOnIndexing = true, just checking for it
+          includeSignatures: extras.config.disableIndexing
+            ? false
+            : (this.options?.includeSignatures ?? false),
         }),
       },
     ];
@@ -46,15 +50,25 @@ class RepoMapContextProvider extends BaseContextProvider {
   async loadSubmenuItems(
     args: LoadSubmenuItemsArgs,
   ): Promise<ContextSubmenuItem[]> {
-    const folders = await args.ide.listFolders();
-    const folderGroups = groupByLastNPathParts(folders, 2);
+    const workspaceDirs = await args.ide.getWorkspaceDirs();
+    const folders = await walkDirs(
+      args.ide,
+      {
+        onlyDirs: true,
+      },
+      workspaceDirs,
+    );
+    const withUniquePaths = getShortestUniqueRelativeUriPaths(
+      folders,
+      workspaceDirs,
+    );
 
     return [
       ENTIRE_PROJECT_ITEM,
-      ...folders.map((folder) => ({
-        id: folder,
-        title: getBasename(folder),
-        description: getUniqueFilePath(folder, folderGroups),
+      ...withUniquePaths.map((folder) => ({
+        id: folder.uri,
+        title: getUriPathBasename(folder.uri),
+        description: folder.uniquePath,
       })),
     ];
   }

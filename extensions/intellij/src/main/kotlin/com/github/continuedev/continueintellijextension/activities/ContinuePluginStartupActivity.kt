@@ -1,5 +1,6 @@
 package com.github.continuedev.continueintellijextension.activities
 
+import IntelliJIDE
 import com.github.continuedev.continueintellijextension.auth.AuthListener
 import com.github.continuedev.continueintellijextension.auth.ContinueAuthService
 import com.github.continuedev.continueintellijextension.auth.ControlPlaneSessionInfo
@@ -9,9 +10,10 @@ import com.github.continuedev.continueintellijextension.listeners.ContinuePlugin
 import com.github.continuedev.continueintellijextension.services.ContinueExtensionSettings
 import com.github.continuedev.continueintellijextension.services.ContinuePluginService
 import com.github.continuedev.continueintellijextension.services.SettingsListener
-import com.intellij.openapi.Disposable
+import com.github.continuedev.continueintellijextension.utils.toUriOrNull
 import com.intellij.openapi.actionSystem.KeyboardShortcut
 import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.application.ApplicationNamesInfo
 import com.intellij.openapi.components.ServiceManager
 import com.intellij.openapi.editor.EditorFactory
 import com.intellij.openapi.fileEditor.FileEditorManager
@@ -28,53 +30,54 @@ import java.nio.file.Paths
 import javax.swing.*
 import com.intellij.openapi.components.service
 import com.intellij.openapi.module.ModuleManager
+import com.intellij.openapi.project.guessProjectDir
 import com.intellij.openapi.roots.ModuleRootManager
+import com.intellij.openapi.vfs.VirtualFileManager
+import com.intellij.openapi.vfs.newvfs.BulkFileListener
+import com.intellij.openapi.vfs.newvfs.events.VFileEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileDeleteEvent
+import com.intellij.openapi.vfs.newvfs.events.VFileContentChangeEvent
 
 fun showTutorial(project: Project) {
-    ContinuePluginStartupActivity::class.java.getClassLoader().getResourceAsStream("continue_tutorial.py").use { `is` ->
-        if (`is` == null) {
-            throw IOException("Resource not found: continue_tutorial.py")
-        }
-        var content = StreamUtil.readText(`is`, StandardCharsets.UTF_8)
-        if (!System.getProperty("os.name").toLowerCase().contains("mac")) {
-            content = content.replace("⌘", "⌃")
-        }
-        val filepath = Paths.get(getContinueGlobalPath(), "continue_tutorial.py").toString()
-        File(filepath).writeText(content)
-        val virtualFile = LocalFileSystem.getInstance().findFileByPath(filepath)
+    val tutorialFileName = getTutorialFileName()
 
+    ContinuePluginStartupActivity::class.java.getClassLoader().getResourceAsStream(tutorialFileName)
+        .use { `is` ->
+            if (`is` == null) {
+                throw IOException("Resource not found: $tutorialFileName")
+            }
+            var content = StreamUtil.readText(`is`, StandardCharsets.UTF_8)
+            if (!System.getProperty("os.name").lowercase().contains("mac")) {
+                content = content.replace("⌘", "⌃")
+            }
+            val filepath = Paths.get(getContinueGlobalPath(), tutorialFileName).toString()
+            File(filepath).writeText(content)
+            val virtualFile = LocalFileSystem.getInstance().findFileByPath(filepath)
 
-        ApplicationManager.getApplication().invokeLater {
-            if (virtualFile != null) {
-                FileEditorManager.getInstance(project).openFile(virtualFile, true)
+            ApplicationManager.getApplication().invokeLater {
+                if (virtualFile != null) {
+                    FileEditorManager.getInstance(project).openFile(virtualFile, true)
+                }
             }
         }
+}
+
+private fun getTutorialFileName(): String {
+    val appName = ApplicationNamesInfo.getInstance().fullProductName.lowercase()
+    return when {
+        appName.contains("intellij") -> "continue_tutorial.java"
+        appName.contains("pycharm") -> "continue_tutorial.py"
+        appName.contains("webstorm") -> "continue_tutorial.ts"
+        else -> "continue_tutorial.py" // Default to Python tutorial
     }
 }
 
-class ContinuePluginStartupActivity : StartupActivity, Disposable, DumbAware {
-    private val coroutineScope = CoroutineScope(Dispatchers.IO)
+class ContinuePluginStartupActivity : StartupActivity, DumbAware {
 
     override fun runActivity(project: Project) {
-
         removeShortcutFromAction(getPlatformSpecificKeyStroke("J"))
         removeShortcutFromAction(getPlatformSpecificKeyStroke("shift J"))
-
-//        project.messageBus.connect().subscribe(
-//            ToolWindowManagerListener.TOPIC,
-//            object : ToolWindowManagerListener {
-//                override fun stateChanged(toolWindowManager: ToolWindowManager) {
-//                    if (toolWindowManager.activeToolWindowId == TerminalToolWindowFactory.TOOL_WINDOW_ID
-//                        || TerminalView.getInstance(project).isNotAvailable()
-//                    ) {
-//                        project.service<TerminalActivityTrackingService>().update(
-//                            TerminalView.getInstance(project).widgets
-//                        )
-//                    }
-//                }
-//            }
-//        )
-
+        removeShortcutFromAction(getPlatformSpecificKeyStroke("I"))
         initializePlugin(project)
     }
 
@@ -95,45 +98,45 @@ class ContinuePluginStartupActivity : StartupActivity, Disposable, DumbAware {
         }
 
         for (actionId in actionIds) {
-             if (actionId.startsWith("continue")) {
-                 continue
-             }
-             val shortcuts = keymap.getShortcuts(actionId)
-             for (shortcut in shortcuts) {
-                 if (shortcut is KeyboardShortcut && shortcut.firstKeyStroke == keyStroke) {
-                     keymap.removeShortcut(actionId, shortcut)
-                 }
-             }
+            if (actionId.startsWith("continue")) {
+                continue
+            }
+            val shortcuts = keymap.getShortcuts(actionId)
+            for (shortcut in shortcuts) {
+                if (shortcut is KeyboardShortcut && shortcut.firstKeyStroke == keyStroke) {
+                    keymap.removeShortcut(actionId, shortcut)
+                }
+            }
         }
     }
 
     private fun initializePlugin(project: Project) {
+        val coroutineScope = CoroutineScope(Dispatchers.IO)
         val continuePluginService = ServiceManager.getService(
             project,
             ContinuePluginService::class.java
         )
 
-        val defaultStrategy = DefaultTextSelectionStrategy()
-
         coroutineScope.launch {
             val settings =
-                    ServiceManager.getService(ContinueExtensionSettings::class.java)
+                ServiceManager.getService(ContinueExtensionSettings::class.java)
             if (!settings.continueState.shownWelcomeDialog) {
                 settings.continueState.shownWelcomeDialog = true
-                // Open continue_tutorial.py
+                // Open tutorial file
                 showTutorial(project)
             }
 
             settings.addRemoteSyncJob()
 
             val ideProtocolClient = IdeProtocolClient(
-                    continuePluginService,
-                    defaultStrategy,
-                    coroutineScope,
-                    project.basePath,
-                    project
+                continuePluginService,
+                coroutineScope,
+                project
             )
 
+            val diffManager = DiffManager(project)
+
+            continuePluginService.diffManager = diffManager
             continuePluginService.ideProtocolClient = ideProtocolClient
 
             // Listen to changes to settings so the core can reload remote configuration
@@ -141,6 +144,41 @@ class ContinuePluginStartupActivity : StartupActivity, Disposable, DumbAware {
             connection.subscribe(SettingsListener.TOPIC, object : SettingsListener {
                 override fun settingsUpdated(settings: ContinueExtensionSettings.ContinueState) {
                     continuePluginService.coreMessenger?.request("config/ideSettingsUpdate", settings, null) { _ -> }
+                    continuePluginService.sendToWebview(
+                        "didChangeIdeSettings", mapOf(
+                            "settings" to mapOf(
+                                "remoteConfigServerUrl" to settings.remoteConfigServerUrl,
+                                "remoteConfigSyncPeriod" to settings.remoteConfigSyncPeriod,
+                                "userToken" to settings.userToken,
+                                "enableControlServerBeta" to settings.enableContinueTeamsBeta
+                            )
+                        )
+                    )
+                }
+            })
+
+            // Handle file changes and deletions - reindex
+            connection.subscribe(VirtualFileManager.VFS_CHANGES, object : BulkFileListener {
+                override fun after(events: List<VFileEvent>) {
+                    // Collect all relevant URIs for deletions
+                    val deletedURIs = events.filterIsInstance<VFileDeleteEvent>()
+                        .mapNotNull { event -> event.file.toUriOrNull() }
+
+                    // Send "files/deleted" message if there are any deletions
+                    if (deletedURIs.isNotEmpty()) {
+                        val data = mapOf("files" to deletedURIs)
+                        continuePluginService.coreMessenger?.request("files/deleted", data, null) { _ -> }
+                    }
+
+                    // Collect all relevant URIs for content changes
+                    val changedURIs = events.filterIsInstance<VFileContentChangeEvent>()
+                        .mapNotNull { event -> event.file.toUriOrNull() }
+
+                    // Send "files/changed" message if there are any content changes
+                    if (changedURIs.isNotEmpty()) {
+                        val data = mapOf("files" to changedURIs)
+                        continuePluginService.coreMessenger?.request("files/changed", data, null) { _ -> }
+                    }
                 }
             })
 
@@ -150,7 +188,7 @@ class ContinuePluginStartupActivity : StartupActivity, Disposable, DumbAware {
 
             if (initialSessionInfo != null) {
                 val data = mapOf(
-                        "sessionInfo" to initialSessionInfo
+                    "sessionInfo" to initialSessionInfo
                 )
                 continuePluginService.coreMessenger?.request("didChangeControlPlaneSessionInfo", data, null) { _ -> }
                 continuePluginService.sendToWebview("didChangeControlPlaneSessionInfo", data)
@@ -163,44 +201,40 @@ class ContinuePluginStartupActivity : StartupActivity, Disposable, DumbAware {
 
                 override fun handleUpdatedSessionInfo(sessionInfo: ControlPlaneSessionInfo?) {
                     val data = mapOf(
-                            "sessionInfo" to sessionInfo
+                        "sessionInfo" to sessionInfo
                     )
-                    continuePluginService.coreMessenger?.request("didChangeControlPlaneSessionInfo", data, null) { _ -> }
+                    continuePluginService.coreMessenger?.request(
+                        "didChangeControlPlaneSessionInfo",
+                        data,
+                        null
+                    ) { _ -> }
                     continuePluginService.sendToWebview("didChangeControlPlaneSessionInfo", data)
                 }
             })
 
             val listener =
-                    ContinuePluginSelectionListener(
-                            ideProtocolClient,
-                            coroutineScope
-                    )
+                ContinuePluginSelectionListener(
+                    coroutineScope,
+                )
 
             // Reload the WebView
             continuePluginService?.let { pluginService ->
                 val allModulePaths = ModuleManager.getInstance(project).modules
-                    .flatMap { module -> ModuleRootManager.getInstance(module).contentRoots.map { it.path } }
-                    .map { Paths.get(it).normalize() }
+                    .flatMap { module -> ModuleRootManager.getInstance(module).contentRoots.mapNotNull { it.toUriOrNull() } }
 
                 val topLevelModulePaths = allModulePaths
                     .filter { modulePath -> allModulePaths.none { it != modulePath && modulePath.startsWith(it) } }
-                    .map { it.toString() }
 
                 pluginService.workspacePaths = topLevelModulePaths.toTypedArray()
             }
 
             EditorFactory.getInstance().eventMulticaster.addSelectionListener(
-                    listener,
-                    this@ContinuePluginStartupActivity
+                listener,
+                ContinuePluginDisposable.getInstance(project)
             )
 
             val coreMessengerManager = CoreMessengerManager(project, ideProtocolClient, coroutineScope)
             continuePluginService.coreMessengerManager = coreMessengerManager
         }
-    }
-
-    override fun dispose() {
-        // Cleanup resources here
-        coroutineScope.cancel()
     }
 }
